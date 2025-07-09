@@ -28,6 +28,19 @@ import (
 	"github.com/prometheus/procfs/internal/util"
 )
 
+var einvalErrorsCache = make(map[string]struct{})
+
+func readFileWithEinvalErrorsCache(name string) (string, error) {
+	if _, ok := einvalErrorsCache[name]; ok {
+		return "", syscall.EINVAL
+	}
+	value, err := util.SysReadFile(name)
+	if errors.Is(err, syscall.EINVAL) {
+		einvalErrorsCache[name] = struct{}{}
+	}
+	return value, err
+}
+
 const infinibandClassPath = "class/infiniband"
 
 // InfiniBandCounters contains counter values from files in
@@ -324,7 +337,7 @@ func parseInfiniBandCounters(portPath string) (*InfiniBandCounters, error) {
 		}
 
 		name := filepath.Join(path, f.Name())
-		value, err := util.SysReadFile(name)
+		value, err := readFileWithEinvalErrorsCache(name)
 		if err != nil {
 			if os.IsNotExist(err) || os.IsPermission(err) || err.Error() == "operation not supported" || errors.Is(err, os.ErrInvalid) || errors.Is(err, syscall.EINVAL) {
 				continue
